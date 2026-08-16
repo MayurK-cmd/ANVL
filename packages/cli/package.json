@@ -1,0 +1,26 @@
+{
+  "name": "@anvil/cli",
+  "version": "0.1.0",
+  "description": "Scaffold, validate and upload Anvil agents to the Store.",
+  "type": "module",
+  "bin": {
+    "anvil": "./anvil.mjs"
+  },
+  "files": [
+    "anvil.mjs",
+    "commands",
+    "templates.mjs",
+    "ui.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test.mjs"
+  },
+  "dependencies": {
+    "@anvil/sdk": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "license": "MIT"
+}

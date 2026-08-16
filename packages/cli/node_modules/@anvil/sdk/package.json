@@ -1,0 +1,26 @@
+{
+  "name": "@anvil/sdk",
+  "version": "0.1.0",
+  "description": "Defines and validates anvil.config.ts, and turns it into the manifest the Anvil Store ingests.",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "license": "MIT"
+}

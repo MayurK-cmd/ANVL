@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+:root {
+  --soot: #12100d;
+  --iron: #1c1914;
+  --slag: #2a241c;
+  --steel: #d4c4a8;
+  --ash: #9a8b78;
+  --ember: #e06a2b;
+  --brass: #c9a35a;
+  --bone: #e8dfd0;
+}
+
+@theme inline {
+  --color-soot: var(--soot);
+  --color-iron: var(--iron);
+  --color-slag: var(--slag);
+  --color-steel: var(--steel);
+  --color-ash: var(--ash);
+  --color-ember: var(--ember);
+  --color-brass: var(--brass);
+  --color-bone: var(--bone);
+  --color-background: var(--soot);
+  --color-foreground: var(--steel);
+  --color-primary: var(--ember);
+  --color-ring: var(--brass);
+  --font-sans: var(--font-figtree);
+  --font-display: var(--font-syne);
+  --font-mono: var(--font-plex);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+html,
+body {
+  background: var(--soot);
+  color: var(--steel);
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-figtree), sans-serif;
+}
+
+h1,
+h2,
+.font-display {
+  font-family: var(--font-syne), sans-serif;
+}

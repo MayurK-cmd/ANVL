@@ -1,0 +1,20 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.28"
+optimizer = true
+optimizer_runs = 200
+# Monad charges on the gas *limit*. Measure with: forge test --gas-report
+
+[profile.default.fuzz]
+runs = 64
+
+# forge install --no-git foundry-rs/forge-std
+# forge install --no-git OpenZeppelin/openzeppelin-contracts
+
+[rpc_endpoints]
+monad_testnet = "https://testnet-rpc.monad.xyz"
+
+[etherscan]
+monad_testnet = { key = "x", url = "https://api.etherscan.io/v2/api?chainid=10143" }
