@@ -1,0 +1,11 @@
+ok: false
+error:
+  code: COMMAND_EXEC
+  message: Zepto add-to-cart click did not register in the cart after 3 attempts.
+  exitCode: 1
+trace:
+  traceId: 20260816121053-9698fffd
+  dir: C:\Users\mayur\.webcmd\profiles\default\traces\20260816121053-9698fffd
+  summaryPath: C:\Users\mayur\.webcmd\profiles\default\traces\20260816121053-9698fffd\summary.md
+  receiptPath: C:\Users\mayur\.webcmd\profiles\default\traces\20260816121053-9698fffd\receipt.json
+  status: failure
