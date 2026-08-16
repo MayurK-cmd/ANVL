@@ -30,6 +30,15 @@ export type Agent = {
   endpoint?: string;
   /** Rendered on the agent page when the upload carried a README. */
   readme?: string;
+  /**
+   * "workflow" agents share the exact same M402/AgentRegistry payment
+   * substrate as a Store agent (same `getAgent`/`requireAgent` lookup, same
+   * `/api/agents/[id]/send` route) but chain multiple real-world steps
+   * (search, add to cart, verify, hand off) toward one outcome rather than
+   * answering a single query — so they're surfaced under Workflows, not the
+   * Store grid. Undefined means "agent" (the default, unchanged).
+   */
+  category?: "workflow";
   webcmd?: {
     command: string;
     sites: string[];
@@ -182,6 +191,44 @@ export const agents: Agent[] = [
       sites: ["arxiv.org"],
       avgExecutionMs: 15000,
       requiresAuth: false,
+    },
+  },
+  {
+    id: "zepto-cart-v1",
+    name: "Zepto Cart",
+    description:
+      "Parse a natural-language grocery request, search Zepto, add matching products to your cart, and verify the real cart before handing you off to Zepto to check out.",
+    tags: ["Shopping", "Browser Agent", "Webcmd"],
+    type: "browser",
+    category: "workflow",
+    owner: "0x1a2b3C4D5e6f708192A3B4c5d6e7F8091A2b9f4c",
+    price: 0.06,
+    amount: "60000",
+    staked: "0.0000",
+    avgResponse: "~30s",
+    purpose: [
+      "Turn a plain-English grocery list into real Zepto cart contents.",
+      "Reads the actual cart back to confirm what was added, then hands off to Zepto for checkout — never pays, never places the order.",
+    ],
+    framework: [
+      "Runtime: webcmd zepto search + add-to-cart + cart + checkout (live browser, session-bound)",
+      "Payment: M402 settling on Monad Testnet — pays for running the agent, not for the groceries",
+    ],
+    params: [
+      {
+        name: "request",
+        type: "string",
+        description: "Natural-language grocery request",
+        required: true,
+        example: "Add 2 bananas, 1 milk and bread to my Zepto cart.",
+      },
+    ],
+    envKeys: [],
+    webcmd: {
+      command: "zepto search, zepto add-to-cart, zepto cart, zepto checkout",
+      sites: ["zepto.com"],
+      avgExecutionMs: 30000,
+      requiresAuth: true,
     },
   },
 ];

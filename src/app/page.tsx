@@ -5,7 +5,9 @@ import { catalog } from "@/lib/registry";
 export const dynamic = "force-dynamic";
 
 export default async function StorePage() {
-  const agents = await catalog();
+  // Workflows (multi-step, chained agents) have their own section — keep the
+  // Store grid to single-call agents.
+  const agents = (await catalog()).filter((agent) => agent.category !== "workflow");
 
   return (
     <div className="mx-auto max-w-7xl">

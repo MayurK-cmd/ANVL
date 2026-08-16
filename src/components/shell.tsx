@@ -22,7 +22,7 @@ import { EXPLORER, FAUCET, formatToken, shortAddr } from "@/lib/wallet";
 
 const nav = [
   { href: "/", label: "Store", icon: House, soon: false },
-  { href: "/workflows", label: "Workflows", icon: Workflow, soon: true },
+  { href: "/workflows", label: "Workflows", icon: Workflow, soon: false },
   { href: "/identity", label: "Identity", icon: IdCard, soon: false },
   { href: "/stake", label: "Stake", icon: CircleDollarSign, soon: false },
   { href: "/keys", label: "Deploy keys", icon: KeyRound, soon: false },

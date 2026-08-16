@@ -212,6 +212,148 @@ function searchCroma(query: string, limit = 3): Promise<ProductListing[]> {
   return searchStoreAdapter("croma", "Croma", query, limit);
 }
 
+type ZeptoSearchRow = {
+  rank: number;
+  product_id: string;
+  title: string;
+  brand: string;
+  pack_size: string;
+  price: number | null;
+  mrp: number | null;
+  availability: string;
+  url: string;
+};
+
+type ZeptoCartRow = {
+  rank: number;
+  product_id: string;
+  title: string;
+  pack_size: string;
+  quantity: number;
+  price: number | null;
+  mrp: number | null;
+  availability: string;
+};
+
+type ZeptoCheckoutRow = { ok: boolean; stage: string; item_count: number; next_action: string; url: string };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One `webcmd zepto <...> -f json` call — deliberately no `--session` flag.
+ * The cart lives in the Zepto profile's own localStorage (domain-scoped, not
+ * session-scoped — confirmed by reading it back with a brand new session),
+ * so nothing needs a shared session to see earlier steps' additions. Forcing
+ * every step through the same tab/session was observed to make later steps
+ * in a run measurably less reliable than the same call made fresh (likely
+ * accumulating page cruft across several navigations in one tab); a fresh
+ * default lease per call was reliable across repeated testing.
+ *
+ * Throws on any adapter error (typed errors, timeouts, empty results alike)
+ * — callers decide whether that's retryable.
+ */
+async function webcmdZepto<T>(args: string[]): Promise<T> {
+  const { stdout } = await execFileAsync(process.execPath, [webcmdEntry, "zepto", ...args, "-f", "json"]);
+  return JSON.parse(stdout) as T;
+}
+
+/**
+ * "Add 2 bananas, 1 milk and bread to my Zepto cart." -> [{query:"bananas",
+ * quantity:2}, {query:"milk", quantity:1}, {query:"bread", quantity:1}].
+ *
+ * Plain regex, not an LLM call: grocery requests are formulaic enough that a
+ * parser is more reliable than a model call on the critical path, and it
+ * keeps this agent working even while the Anthropic key is down.
+ */
+function parseGroceryRequest(text: string): Array<{ query: string; quantity: number }> {
+  const body = text
+    .trim()
+    .replace(/^(please\s+)?(add|buy|get|order|purchase)\s+/i, "")
+    .replace(/\s*(to\s+my\s+)?(zepto\s+)?cart\.?\s*$/i, "")
+    .trim();
+
+  return body
+    .split(/\s*,\s*|\s+\band\b\s+/i)
+    .map((segment) => segment.trim().replace(/\.$/, ""))
+    .filter(Boolean)
+    .map((segment) => {
+      const match = segment.match(/^(\d+)\s*(?:x\s*)?(.+)$/i);
+      if (!match) return { query: segment, quantity: 1 };
+      const quantity = Math.max(1, Math.min(12, parseInt(match[1], 10)));
+      return { query: match[2].trim(), quantity };
+    })
+    .filter((item) => item.query.length > 0);
+}
+
+/**
+ * Zepto's search results render as skeleton placeholders for a moment after
+ * navigation; hitting `evaluate` before hydration finishes reads an empty
+ * page, not an out-of-stock product. Observed in practice: the second or
+ * third attempt against the same warm session succeeds.
+ */
+const ZEPTO_SEARCH_ATTEMPTS = 5;
+
+async function searchZeptoWithRetry(
+  query: string,
+  logs: string[],
+  stamp: () => string,
+): Promise<ZeptoSearchRow[]> {
+  for (let attempt = 1; attempt <= ZEPTO_SEARCH_ATTEMPTS; attempt += 1) {
+    try {
+      const rows = await webcmdZepto<ZeptoSearchRow[]>(["search", query, "--limit", "5"]);
+      if (rows.length > 0) return rows;
+    } catch {
+      // fall through to retry
+    }
+    if (attempt < ZEPTO_SEARCH_ATTEMPTS) {
+      logs.push(`${stamp()} Zepto search "${query}": no results yet, retrying…`);
+      await sleep(4000);
+    }
+  }
+  return [];
+}
+
+/**
+ * Adds one item and reads the cart back to confirm it actually landed —
+ * `add-to-cart` has been observed to report `ok: true` on a click that never
+ * reached the page's real add button (recommendation-carousel buttons share
+ * the same visible text). The cart read is the only trustworthy signal.
+ */
+const ZEPTO_ADD_ATTEMPTS = 4;
+
+async function addToCartAndVerify(
+  row: ZeptoSearchRow,
+  quantity: number,
+  logs: string[],
+  stamp: () => string,
+): Promise<ZeptoCartRow | null> {
+  // Snapshot first: the cart may not start empty (a prior run, or the same
+  // product requested twice), so "verified" has to mean the quantity went up
+  // by at least what we asked for, not just "is present at or above N".
+  const before = await webcmdZepto<ZeptoCartRow[]>(["cart"]).catch(() => [] as ZeptoCartRow[]);
+  const startQty = before.find((r) => r.product_id === row.product_id)?.quantity ?? 0;
+
+  for (let attempt = 1; attempt <= ZEPTO_ADD_ATTEMPTS; attempt += 1) {
+    try {
+      await webcmdZepto(["add-to-cart", row.url, "--quantity", String(quantity)]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "add-to-cart failed";
+      logs.push(`${stamp()} ${row.title}: add-to-cart error (attempt ${attempt}) — ${message}`);
+      if (attempt < ZEPTO_ADD_ATTEMPTS) await sleep(3000);
+      continue;
+    }
+    const cart = await webcmdZepto<ZeptoCartRow[]>(["cart"]).catch(() => [] as ZeptoCartRow[]);
+    const line = cart.find((r) => r.product_id === row.product_id);
+    if (line && line.quantity - startQty >= quantity) {
+      logs.push(`${stamp()} ${row.title}: verified in cart (qty ${line.quantity})`);
+      return line;
+    }
+    logs.push(`${stamp()} ${row.title}: not reflected in cart yet (attempt ${attempt}), retrying…`);
+    if (attempt < ZEPTO_ADD_ATTEMPTS) await sleep(3000);
+  }
+  return null;
+}
+
 /** Run one store's search with an optional single retry; never throws — reports status instead. */
 async function tryStore(
   name: string,
@@ -441,7 +583,135 @@ export async function runAgent(
     }
   }
 
+  if (agent.id === "zepto-cart-v1") {
+    const request = String(input.request ?? "");
+    const start = Date.now();
+    const stamp = () => `[${((Date.now() - start) / 1000).toFixed(1)}s]`;
+
+    const wanted = parseGroceryRequest(request);
+    if (wanted.length === 0) {
+      throw new Error('Could not find any items in that request. Try "Add 2 bananas and 1 milk to my Zepto cart."');
+    }
+
+    const logs = [`${stamp()} Parsed ${wanted.length} item(s): ${wanted.map((w) => `${w.quantity}x ${w.query}`).join(", ")}`];
+
+    const added: ZeptoCartRow[] = [];
+    const failures: Array<{ query: string; reason: string }> = [];
+
+    for (const item of wanted) {
+      const results = await searchZeptoWithRetry(item.query, logs, stamp);
+      if (results.length === 0) {
+        logs.push(`${stamp()} ${item.query}: no Zepto products found`);
+        failures.push({ query: item.query, reason: "no products found" });
+        continue;
+      }
+      const pick = results[0];
+      logs.push(`${stamp()} ${item.query}: selected "${pick.title}" (${pick.pack_size || "pack size n/a"})`);
+
+      const line = await addToCartAndVerify(pick, item.quantity, logs, stamp);
+      if (!line) {
+        failures.push({ query: item.query, reason: `could not verify "${pick.title}" in cart` });
+        continue;
+      }
+      added.push(line);
+    }
+
+    if (added.length === 0) {
+      logs.push(`${stamp()} ERROR: no items could be added to the Zepto cart`);
+      throw new Error("Could not add any items to the Zepto cart");
+    }
+
+    const items = added.map((row) => ({
+      title: row.title,
+      quantity: row.quantity,
+      unitPrice: row.price,
+      lineTotal: row.price != null ? Number((row.price * row.quantity).toFixed(2)) : null,
+    }));
+    const total = items.reduce((sum, i) => sum + (i.lineTotal ?? 0), 0);
+
+    logs.push(`${stamp()} Cart verified: ${added.length}/${wanted.length} item(s) added, total ₹${total}`);
+
+    // Zepto's own checkout — never placed, never paid. This only opens the
+    // real checkout review page in the same browser session so the user can
+    // take over; a login-gated account surfaces as a handoff, not a failure.
+    let checkout: {
+      available: boolean;
+      type: "zepto_session" | "login_required" | "unavailable";
+      url?: string;
+      label: string;
+    };
+    try {
+      const result = await webcmdZepto<ZeptoCheckoutRow[]>(["checkout"]);
+      const row = result[0];
+      checkout = { available: true, type: "zepto_session", url: row?.url, label: "Continue to Zepto" };
+      logs.push(`${stamp()} Checkout ready (stage: ${row?.stage ?? "cart"}) — stopping before payment`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "checkout unavailable";
+      if (/AUTH_REQUIRED|log ?in/i.test(message)) {
+        checkout = {
+          available: false,
+          type: "login_required",
+          url: "https://www.zepto.com/?cart=open",
+          label: "Log in to Zepto to continue",
+        };
+        logs.push(`${stamp()} Checkout requires Zepto login — handing off without opening checkout`);
+      } else {
+        checkout = { available: false, type: "unavailable", label: "Continue to Zepto" };
+        logs.push(`${stamp()} Checkout preview unavailable: ${message}`);
+      }
+    }
+
+    logs.push(`${stamp()} Done`);
+
+    return {
+      result: {
+        workflow: "zepto-cart-v1",
+        status: failures.length === 0 ? "ready_for_checkout" : "partial",
+        items,
+        total: Number(total.toFixed(2)),
+        currency: "INR",
+        checkout,
+        failures,
+      },
+      logs,
+    };
+  }
+
   return { result: { ok: true, input }, logs: ["[00.0s] Done"] };
+}
+
+/**
+ * Brings the Zepto browser session forward so the user can pick up checkout
+ * where the agent left off — the same persistent profile the agent just used
+ * (cart state lives in that profile's localStorage, not in any one session
+ * id). Never touches payment, address, or order state; `place-order` is
+ * never called here or anywhere else in this codebase.
+ */
+export async function openZeptoSession(
+  mode: "checkout" | "login",
+): Promise<{ ok: boolean; stage?: string; url?: string; message?: string }> {
+  try {
+    const { stdout } = await execFileAsync(process.execPath, [
+      webcmdEntry,
+      "zepto",
+      mode,
+      "-f",
+      "json",
+      "--window",
+      "foreground",
+      "--keep-tab",
+      "true",
+    ]);
+    if (mode === "login") {
+      const [row] = JSON.parse(stdout) as Array<{ status: string; logged_in: boolean }>;
+      return { ok: Boolean(row?.logged_in), stage: row?.status, url: "https://www.zepto.com" };
+    }
+    const [row] = JSON.parse(stdout) as ZeptoCheckoutRow[];
+    return { ok: Boolean(row?.ok), stage: row?.stage, url: row?.url };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "could not open Zepto";
+    return { ok: false, message };
+  }
 }
 
 export function requireAgent(id: string): Agent {
