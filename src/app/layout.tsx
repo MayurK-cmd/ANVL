@@ -1,23 +1,14 @@
 import type { Metadata } from "next";
-import { Figtree, IBM_Plex_Mono, Syne } from "next/font/google";
-import { Shell } from "@/components/shell";
+import { Roboto_Mono } from "next/font/google";
+import { ShellModern } from "@/components/shell-modern";
 import "./globals.css";
 
-const syne = Syne({
-  variable: "--font-syne",
+const robotoMono = Roboto_Mono({
   subsets: ["latin"],
-  weight: ["700", "800"],
-});
-
-const figtree = Figtree({
-  variable: "--font-figtree",
-  subsets: ["latin"],
-});
-
-const plex = IBM_Plex_Mono({
-  variable: "--font-plex",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["100", "200", "300", "400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-roboto-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -27,12 +18,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${syne.variable} ${figtree.variable} ${plex.variable} h-full antialiased`}
-    >
+    <html lang="en" className={`h-full antialiased ${robotoMono.variable}`}>
       <body className="min-h-full">
-        <Shell>{children}</Shell>
+        <ShellModern>{children}</ShellModern>
       </body>
     </html>
   );

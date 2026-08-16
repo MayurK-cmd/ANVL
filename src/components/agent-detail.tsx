@@ -108,10 +108,10 @@ export function AgentDetail({
     <div className="mx-auto max-w-7xl">
       <nav className="text-sm text-ash">
         <Link
-          href="/"
+          href="/agents"
           className="hover:text-bone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
         >
-          Store
+          Agents
         </Link>
         <span aria-hidden> / </span>
         <span className="text-steel">{agent.name}</span>
